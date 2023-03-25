@@ -1,0 +1,29 @@
+
+◎ fcitx用 cannaサーバフロントエンド fcitx-canna
+
+	Makefile		fcitx-canna.so作成用メイクファイル
+	README			このファイル
+	canna.c			fcitx-cannaソース
+	canna.h
+	canna.conf		inputmethodの定義ファイル
+				$FCIRXshare/inputmethod下に配置 
+	fcitx-canna.conf	アドオンモジョールの定義ファイル
+				$FCIRXshare/addon下に配置 
+
+
+  コマンド
+	make
+  で fcitx-canna.so が作成できたら、root権限で
+	make install
+  を実行する。
+  なお、インストール場所は以下を仮定。
+	/usr/local/lib/fcitx/fcitx-canna.so
+	/usr/local/share/fcitx/addon/fcitx-canna.conf
+	/usr/local/share/fcitx/inputmethod/canna.conf
+
+  インストール後、fcitx を再起動してから、
+  fcitx-config-gtk を用いて[Input Method」内の
+ 「japanese」内にある「Canna」を「Current Input Method」に移動すれば、
+  cannaによる入力を行えるようになる。
+  ただし、fcitxの設定において、(デフォルト設定である)
+  「Show Preedit String in Client Window」が有効になっている必要がある。
