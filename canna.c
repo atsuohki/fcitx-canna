@@ -46,7 +46,7 @@ extern char *jrKanjiError;
 
 #include "canna.h"
 
-#define _DEBUG_ 1
+#define _DEBUG_ 0
 #if _DEBUG_
 static int _dbg_fd = -2;
 static char _dbg_buf[4096];
@@ -427,8 +427,10 @@ _canna_process_key(FcitxCanna *canna, FcitxKeySym sym, unsigned int state)
 static void
 _canna_exit()
 {
+#if _DEBUG_
     snprintf(_dbg_buf, sizeof(_dbg_buf), "_canna_exit()\n");
     _dbg_put();
+#endif
 }
 
 /*
