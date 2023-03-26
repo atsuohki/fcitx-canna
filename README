@@ -4,9 +4,8 @@
 	Makefile		fcitx-canna.so作成用メイクファイル
 	README			このファイル
 	canna.c			fcitx-cannaのソース。
-				_DEBUG_を0以外にしてコンパイルすると
-				/tmp/fcitx-canna.log に実行トレースを
-				出力する
+				_DEBUG_を定義にしてコンパイルすると
+				実行トレースを出力する
 	canna.h
 	canna.conf		inputmethodの定義ファイル
 				$FCIRXshare/inputmethod下に配置 
@@ -34,6 +33,10 @@
 【注意】
   ・最小限の機能のみ実装。
     Canna のカスタマイズは ~/.canna, ~/.cannax で行う。
+  ・fcitx デーモンを停止するには、コマンド
+	fcitx-remote -e
+    で行う。
+    (SIGTERM等で終了させると、Cannaサーバとのコネクションを解放できない)
   ・desktop環境での使用に必要なアイコン等は未整備。
 
 【履歴】
