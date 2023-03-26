@@ -29,7 +29,6 @@
 #include <fcitx/context.h>
 #include <fcitx/ui.h>
 #include <fcitx/hook.h>
-#include <fcntl.h>
 
 #define CANNA3_7
 #ifdef CANNA3_7
@@ -48,6 +47,7 @@ extern char *jrKanjiError;
 
 #define _DEBUG_ 0
 #if _DEBUG_
+#include <fcntl.h>
 static int _dbg_fd = -2;
 static char _dbg_buf[4096];
 static void
@@ -61,11 +61,16 @@ _dbg_put()
 }
 #endif
 
+/* ===========================================================
+ *	Canna related functions
+ * ===========================================================
+ */
+
 /*
- * canna related functions
+ * Canna internal code is EUC-JP, so needs code convertion
  */
 static void
-_string_euc2utf(FcitxCanna *canna, unsigned char *dst, int dsize,
+_canna_euc2utf(FcitxCanna *canna, unsigned char *dst, int dsize,
 		unsigned char *src, int ssize)
 {
     size_t dsz, ssz;
@@ -81,7 +86,9 @@ _string_euc2utf(FcitxCanna *canna, unsigned char *dst, int dsize,
     *dp = '\0';
 }
 
-/* return Canna internal string length of EUC string */
+/*
+ * return Canna internal string length in character (not byte)
+ */
 static int
 _canna_strlen(unsigned char *p, int l)
 {
@@ -114,86 +121,18 @@ _canna_strlen(unsigned char *p, int l)
   return(len);
 }
 
-static void
-_canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatus *ks)
-{
-  /* clear result area */
-  canna->error[0] = '\0';
-  canna->kakutei[0] = '\0';
-  canna->henkan[0] = '\0';
-  canna->henkan_len = canna->henkan_revPos = canna->henkan_revLen = 0;
-  canna->ichiran[0] = '\0';
-  canna->ichiran_len = canna->ichiran_revPos = canna->ichiran_revLen = 0;
-
-
-  if (len < 0) { /* Error detected */
-    _string_euc2utf(canna, canna->error, sizeof(canna->error),
-		    (unsigned char*)jrKanjiError, strlen(jrKanjiError));
-#if _DEBUG_
-    snprintf(_dbg_buf, sizeof(_dbg_buf),
-	     "    error:%s\n", canna->error);
-    _dbg_put();
-#endif
-  } else {
-    /* 確定した文字列 */
-	_string_euc2utf(canna, canna->kakutei, sizeof(canna->kakutei), buf, len);
-#if _DEBUG_
-	snprintf(_dbg_buf, sizeof(_dbg_buf),
-		 "    kakutei:%ld:%s\n",
-		 strlen((char*)canna->kakutei), canna->kakutei);
-	_dbg_put();
-#endif
-
-    /* 候補表示の文字列です。*/
-    if (ks->length >= 0) {
-      _string_euc2utf(canna, canna->henkan, sizeof(canna->henkan),
-		      ks->echoStr, ks->length);
-      /* canna_underline の真偽によらず、実質的に同じ処理をしている。
-	 しかも、偽の場合の count_char の方は EUC の３バイト文字に対応して
-         いない。 */
-      canna->henkan_len = _canna_strlen(ks->echoStr,ks->length);
-      canna->henkan_revPos = _canna_strlen(ks->echoStr,ks->revPos);
-      canna->henkan_revLen = _canna_strlen(ks->echoStr+ks->revPos,ks->revLen);
-#if _DEBUG_
-      snprintf(_dbg_buf, sizeof(_dbg_buf),
-	       "    henkan:%d:%d:%d:%s\n",
-	       canna->henkan_len, canna->henkan_revPos, canna->henkan_revLen,
-	       canna->henkan);
-      _dbg_put();
-#endif
-    }
-
-    /* 一覧の情報 */
-    if (ks->info & KanjiGLineInfo && ks->gline.length >= 0) {
-      _string_euc2utf(canna, canna->ichiran, sizeof(canna->ichiran),
-		      ks->gline.line, ks->gline.length);
-      canna->ichiran_len = _canna_strlen(ks->gline.line,ks->gline.length);
-      canna->ichiran_revPos = _canna_strlen(ks->gline.line,ks->gline.revPos);
-      canna->ichiran_revLen = _canna_strlen(ks->gline.line+ks->gline.revPos,ks->gline.revLen);
-#if _DEBUG_
-      snprintf(_dbg_buf, sizeof(_dbg_buf),
-	       "    ichiran:%d:%d:%d:%s\n",
-	       canna->ichiran_len, canna->ichiran_revPos, canna->ichiran_revLen,
-	       canna->ichiran);
-      _dbg_put();
-#endif
-    }
-
-    /* モードの情報 */
-    if (ks->info & KanjiModeInfo) {
-      _string_euc2utf(canna, canna->mode, sizeof(canna->mode),
-		      ks->mode, strlen((char*)ks->mode));
-#if _DEBUG_
-      snprintf(_dbg_buf, sizeof(_dbg_buf),
-	       "    mode:%s\n", canna->mode);
-      _dbg_put();
-#endif
-    }
-    if (canna->mode[0] == '\0')
-      strcpy((char*)canna->mode, "canna");
-  }
-}
-
+/*
+ * setup 4 ui windows and commit kakutei if it exists
+ *	AuxUp: error message
+ *	  or   [henkan-mode]
+ *	  or   [henkan-mode] ichiran
+ *
+ *	ClientPreedit: henkan
+ *
+ * this layout provides `OnTheSpot' like appearance of kinput2,
+ * but assuming "Show Preedit String in Client Window" is true
+ * (it is the default).
+ */
 static void
 _canna_setup_ui_windows(FcitxCanna *canna)
 {
@@ -208,24 +147,12 @@ _canna_setup_ui_windows(FcitxCanna *canna)
     FcitxMessagesSetMessageCount(auxup, 0); 
     FcitxMessagesSetMessageCount(auxdown, 0); 
 
-    /*
-     * AuxUp: error message
-     * or     [henkan-mode]
-     * or     [henkan-mode] ichiran
-     *
-     * ClientPreedit: henkan
-     */
-
     /* error messges goes to 'AuxUp' */
     if (canna->error[0]) {
 	FcitxMessagesAddMessageAtLast(auxup, MSG_OTHER, "%s", canna->error);
 	canna->error[0] = '\0';
 	return;
     }
-
-    /* henkan-mode goes to 'AuxUp' too */
-    FcitxMessagesAddMessageAtLast(auxup, MSG_OTHER, "%s",
-				  canna->mode[0] ? (char*)canna->mode : "canna");
 
     /* commit kakutei */
     if (canna->kakutei[0]) {
@@ -236,19 +163,22 @@ _canna_setup_ui_windows(FcitxCanna *canna)
 	return;
     }
 
+    /* henkan-mode goes to 'AuxUp' */
+    FcitxMessagesAddMessageAtLast(auxup, MSG_OTHER, "%s",
+				  canna->mode[0] ? (char*)canna->mode : "canna");
+
     /* ichiran goes to 'AuxUp' too */
     if (canna->ichiran[0]) {
       if (canna->ichiran_revLen) {
 	int ch;
 	char *p, *q;
-	p = fcitx_utf8_get_nth_char((char*)canna->ichiran,
-				    canna->ichiran_revPos);
-	q = fcitx_utf8_get_nth_char(p, canna->ichiran_revPos+canna->ichiran_revLen);
+	p = fcitx_utf8_get_nth_char((char*)canna->ichiran, canna->ichiran_revPos);
+	q = fcitx_utf8_get_nth_char(p, canna->ichiran_revLen);
 	ch = *p; *p = '\0';
 	FcitxMessagesAddMessageAtLast(auxup, MSG_OTHER, "%s", canna->ichiran);
 	*p = ch;
 	ch = *q; *q = '\0';
-	FcitxMessagesAddMessageAtLast(auxup, MSG_HIGHLIGHT, "%s", p);
+	FcitxMessagesAddMessageAtLast(auxup, MSG_CANDIATE_CURSOR, "%s", p);
 	*q = ch;
 	FcitxMessagesAddMessageAtLast(auxup, MSG_OTHER, "%s", q);
       } else {
@@ -260,7 +190,7 @@ _canna_setup_ui_windows(FcitxCanna *canna)
       int ch;
       char *p, *q;
       p = fcitx_utf8_get_nth_char((char*)canna->henkan, canna->henkan_revPos);
-      q = fcitx_utf8_get_nth_char(p, canna->henkan_revPos+canna->henkan_revLen);
+      q = fcitx_utf8_get_nth_char(p, canna->henkan_revLen);
       ch = *p; *p = '\0';
       FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", canna->henkan);
       *p = ch;
@@ -268,9 +198,91 @@ _canna_setup_ui_windows(FcitxCanna *canna)
       FcitxMessagesAddMessageAtLast(clientpreedit, MSG_HIGHLIGHT, "%s", p);
       *q = ch;
       FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", q);
+      FcitxInputStateSetClientCursorPos(input, (int)(p-(char*)canna->henkan));
     } else {
       FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", canna->henkan);
+      FcitxInputStateSetClientCursorPos(input, strlen((char*)canna->henkan));
     }
+}
+
+/*
+ * setup kakutei, henkan, ichiran strings from the result
+ */
+static void
+_canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatus *ks)
+{
+  /* clear result area */
+  canna->error[0] = '\0';
+  canna->kakutei[0] = '\0';
+  canna->henkan[0] = '\0';
+  canna->henkan_len = canna->henkan_revPos = canna->henkan_revLen = 0;
+  canna->ichiran[0] = '\0';
+  canna->ichiran_len = canna->ichiran_revPos = canna->ichiran_revLen = 0;
+
+
+  if (len < 0) { /* Error detected */
+    _canna_euc2utf(canna, canna->error, sizeof(canna->error),
+		    (unsigned char*)jrKanjiError, strlen(jrKanjiError));
+#if _DEBUG_
+    snprintf(_dbg_buf, sizeof(_dbg_buf),
+	     "    error:%s\n", canna->error);
+    _dbg_put();
+#endif
+  } else {
+    /* converted string */
+    _canna_euc2utf(canna, canna->kakutei, sizeof(canna->kakutei), buf, len);
+#if _DEBUG_
+    snprintf(_dbg_buf, sizeof(_dbg_buf),
+	     "    kakutei:%ld:%s\n",
+	     strlen((char*)canna->kakutei), canna->kakutei);
+    _dbg_put();
+#endif
+
+    /* candidate strings */
+    if (ks->length >= 0) {
+      _canna_euc2utf(canna, canna->henkan, sizeof(canna->henkan),
+		      ks->echoStr, ks->length);
+      canna->henkan_len = _canna_strlen(ks->echoStr,ks->length);
+      canna->henkan_revPos = _canna_strlen(ks->echoStr,ks->revPos);
+      canna->henkan_revLen = _canna_strlen(ks->echoStr+ks->revPos,ks->revLen);
+#if _DEBUG_
+      snprintf(_dbg_buf, sizeof(_dbg_buf),
+	       "    henkan:%d:%d:%d:%s\n",
+	       canna->henkan_len, canna->henkan_revPos, canna->henkan_revLen,
+	       canna->henkan);
+      _dbg_put();
+#endif
+    }
+
+    /* listing infomation */
+    if (ks->info & KanjiGLineInfo && ks->gline.length >= 0) {
+      _canna_euc2utf(canna, canna->ichiran, sizeof(canna->ichiran),
+		      ks->gline.line, ks->gline.length);
+      canna->ichiran_len = _canna_strlen(ks->gline.line,ks->gline.length);
+      canna->ichiran_revPos = _canna_strlen(ks->gline.line,ks->gline.revPos);
+      canna->ichiran_revLen = _canna_strlen(ks->gline.line+ks->gline.revPos,ks->gline.revLen);
+#if _DEBUG_
+      snprintf(_dbg_buf, sizeof(_dbg_buf),
+	       "    ichiran:%d:%d:%d:%s\n",
+	       canna->ichiran_len, canna->ichiran_revPos, canna->ichiran_revLen,
+	       canna->ichiran);
+      _dbg_put();
+#endif
+    }
+
+    /* conversion mode */
+    if (ks->info & KanjiModeInfo) {
+      _canna_euc2utf(canna, canna->mode, sizeof(canna->mode),
+		      ks->mode, strlen((char*)ks->mode));
+#if _DEBUG_
+      snprintf(_dbg_buf, sizeof(_dbg_buf),
+	       "    mode:%s\n", canna->mode);
+      _dbg_put();
+#endif
+    }
+    if (canna->mode[0] == '\0')
+      strcpy((char*)canna->mode, "canna");
+  }
 }
 
 static boolean
@@ -282,7 +294,7 @@ _canna_connect_server(FcitxCanna *canna)
 	     "    connect to canna server\n");
     _dbg_put();
 #endif
-    int kugiri = 1; /* 文節区切りをする */
+    int kugiri = 1; /* separete words */
 
     jrKanjiControl(0, KC_SETSERVERNAME, (char *)NULL);
     jrKanjiControl(0, KC_SETINITFILENAME, (char *)NULL);
@@ -294,7 +306,7 @@ _canna_connect_server(FcitxCanna *canna)
     jrKanjiControl(0, KC_SETBUNSETSUKUGIRI, (char *)((long)kugiri));
     jrKanjiControl(0, KC_SETWIDTH, (char *)78);
     jrKanjiControl(0, KC_INHIBITHANKAKUKANA, (char *)0);
-    jrKanjiControl(0, KC_YOMIINFO, (char *)2); /* ※２: ローマ字まで返す */
+    jrKanjiControl(0, KC_YOMIINFO, (char *)2); /* back to Roman */
     canna->initialized = true;
   }
   return canna->initialized;
@@ -314,9 +326,8 @@ _canna_disconnect_server(FcitxCanna *canna)
   }
 }
 
-
 static void
-_canna_reset_mode(FcitxCanna *canna)
+_canna_reset_input_mode(FcitxCanna *canna)
 {
     if (!_canna_connect_server(canna))
 	return;
@@ -338,7 +349,7 @@ _fcitxkey_to_canna(FcitxKeySym sym, unsigned int state)
     struct _f2c_ {
 	FcitxKeySym fkey;
 	int ckey;
-    } _f2c [] = {
+    } f2c [] = {
 	{FcitxKey_BackSpace,	0x08},
 	{FcitxKey_Tab,	0x09},
 	{FcitxKey_Linefeed,	0x0a},
@@ -375,24 +386,27 @@ _fcitxkey_to_canna(FcitxKeySym sym, unsigned int state)
     };
     int i;
 
-    if ((sym & ~0x7f) == 0
-	&& (state == FcitxKeyState_None || state == FcitxKeyState_Shift)) {
-	/* normal ascii printable character */
-	return (int)sym;
+    if ((sym & ~0x7f) == 0) {
+	if (state == FcitxKeyState_None || state == FcitxKeyState_Shift) {
+	    /* normal ascii printable character */
+	    return (int)sym;
+	}
+	if (state == FcitxKeyState_Ctrl) {
+	    /* normal ascii control character */
+	    return (int)sym & 0x1f;
+	}
     }
-    if ((sym & ~0x7f) == 0 && state == FcitxKeyState_Ctrl) {
-	/* normal ascii control character */
-	return (int)sym & 0x1f;
-    }
-    for (i=0; _f2c[i].fkey; i++) {
-	if (_f2c[i].fkey == sym) {
-	    return _f2c[i].ckey;
+    /* map special key symbols */
+    for (i=0; f2c[i].fkey; i++) {
+	if (f2c[i].fkey == sym) {
+	    return f2c[i].ckey;
 	}
     }
 
     return -1;
 }
 
+/* send a key to the canna server and receive response */
 static INPUT_RETURN_VALUE
 _canna_process_key(FcitxCanna *canna, FcitxKeySym sym, unsigned int state)
 {
@@ -406,21 +420,25 @@ _canna_process_key(FcitxCanna *canna, FcitxKeySym sym, unsigned int state)
 	     key);
     _dbg_put();
 #endif
+
     while (key>=0) {
 	jrKanjiStatus ks;
 	int len;
-
-	if (canna->henkan[0] == '\0') {
-	    /* idle state: allow printable or F1 */ 
-	    if (key <= ' ' ||
-		(key > '~' && key != CANNA_KEY_F1)) break;
-	}
+	boolean was_idle = canna->henkan[0] == '\0';
 
 	len = jrKanjiString(0, key, (char*)canna->canna_buf, KEYTOSTRSIZE, &ks);
 	_canna_storeResults(canna, canna->canna_buf, len, &ks);
+	if (was_idle && canna->henkan[0] == '\0') {
+	    break;
+	}
 	_canna_setup_ui_windows(canna);
         return IRV_DISPLAY_MESSAGE | IRV_DO_NOTHING;
     }
+#if _DEBUG_
+    snprintf(_dbg_buf, sizeof(_dbg_buf),
+	     "    key(0x%x) is not consumed\n", key);
+    _dbg_put();
+#endif
     return IRV_TO_PROCESS;
 }
 
@@ -431,15 +449,20 @@ _canna_exit()
     snprintf(_dbg_buf, sizeof(_dbg_buf), "_canna_exit()\n");
     _dbg_put();
 #endif
+    /* noop */
 }
 
 /*
+ * =============================================================
+ *	functions to register fcitx addon &
+ *	to implement input method for Canna server
  * =============================================================
  */
 static void *FcitxCannaCreate(FcitxInstance *instance);
 static void FcitxCannaDestroy(void *arg);
 static void FcitxCannaReloadConfig(void *arg);
 
+/* addon entry */
 FCITX_DEFINE_PLUGIN(fcitx_canna, ime2, FcitxIMClass2) = {
     FcitxCannaCreate,
     FcitxCannaDestroy,
@@ -456,6 +479,7 @@ static INPUT_RETURN_VALUE FcitxCannaDoInput(void *arg, FcitxKeySym sym,
 					    unsigned int state);
 static void FcitxCannaReset(void *arg);
 
+/* input method interface */
 static const FcitxIMIFace canna_iface = {
     .ResetIM = FcitxCannaReset,
     .DoInput = FcitxCannaDoInput,
@@ -480,12 +504,6 @@ void FcitxCannaResetHook(void *arg)
     _dbg_put();
 #endif
     FcitxCannaReset(arg);
-
-#define RESET_STATUS(STATUS_NAME) \
-    if (im && strcmp(im->uniqueName, "canna") == 0) \
-        FcitxUISetStatusVisable(canna->owner, STATUS_NAME, true); \
-    else \
-        FcitxUISetStatusVisable(canna->owner, STATUS_NAME, false);
 }
 
 static boolean
@@ -514,9 +532,6 @@ FcitxCannaInit(void *arg)
 	_dbg_put();
 #endif
     }
-    canna->cc_pre = 0;
-    canna->cc_post = 0;
-
     return canna->initialized;
 }
 
@@ -545,7 +560,6 @@ FcitxCannaDoInput(void *arg, FcitxKeySym sym, unsigned int state)
 	     "    FcitxCannaDoInput().state = 0x%lx;\n" ,(unsigned long)state);
     _dbg_put();
 #endif
-
     return _canna_process_key(canna, sym, state);
 }
 
@@ -565,15 +579,8 @@ FcitxCannaReset(void *arg)
       _dbg_put();
 #endif
     }
-    canna->cc_pre = 0;
-    canna->cc_post = 0;
-
-    _canna_reset_mode(canna);
+    _canna_reset_input_mode(canna);
 }
-
-/*
- * functions to register fcitx addon
- */
 
 static void*
 FcitxCannaCreate(FcitxInstance *instance)
@@ -590,8 +597,6 @@ FcitxCannaCreate(FcitxInstance *instance)
     FcitxCanna *canna = fcitx_utils_new(FcitxCanna);
     canna->owner = instance;
     canna->initialized = false;
-    canna->cc_pre = 0;
-    canna->cc_post = 0;
     canna->euc2utf = iconv_open("UTF-8", "EUC-JP"); /* (dst, src) */
 
     (void) atexit(_canna_exit);

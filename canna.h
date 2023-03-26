@@ -33,10 +33,6 @@
 typedef struct {
     FcitxInstance *owner;
     boolean initialized;
-    int cc_pre;
-    char buf_pre[MAX_CC_PRE+1];
-    int cc_post;
-    unsigned char buf_post[1024];
     iconv_t euc2utf;
     unsigned char canna_buf[KEYTOSTRSIZE];
     unsigned char error[KEYTOSTRSIZE];

@@ -1,9 +1,12 @@
 
-◎ fcitx用 cannaサーバフロントエンド fcitx-canna
+◎ fcitx用 Canna サーバフロントエンド fcitx-canna
 
 	Makefile		fcitx-canna.so作成用メイクファイル
 	README			このファイル
-	canna.c			fcitx-cannaソース
+	canna.c			fcitx-cannaのソース。
+				_DEBUG_を0以外にしてコンパイルすると
+				/tmp/fcitx-canna.log に実行トレースを
+				出力する
 	canna.h
 	canna.conf		inputmethodの定義ファイル
 				$FCIRXshare/inputmethod下に配置 
@@ -27,3 +30,11 @@
   cannaによる入力を行えるようになる。
   ただし、fcitxの設定において、(デフォルト設定である)
   「Show Preedit String in Client Window」が有効になっている必要がある。
+
+【注意】
+  ・最小限の機能のみ実装。
+    Canna のカスタマイズは ~/.canna, ~/.cannax で行う。
+  ・desktop環境での使用に必要なアイコン等は未整備。
+
+【履歴】
+  2023/03/25 初版
