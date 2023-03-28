@@ -28,8 +28,6 @@
 
 #define	KEYTOSTRSIZE 2048
 
-#define	MAX_CC_PRE 3	/* pre should be less or equal to */
-
 typedef struct {
     FcitxInstance *owner;
     boolean initialized;
