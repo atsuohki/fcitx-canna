@@ -45,7 +45,11 @@ extern char *jrKanjiError;
 
 #include "canna.h"
 
-/* #define _DEBUG_ */
+#ifdef _DEBUG_
+#define FcitxLogInfo(fmt...) FcitxLog(INFO, fmt)
+#else
+#define FcitxLogInfo(fmt...)
+#endif
 
 /* ===========================================================
  *	Canna related functions
@@ -209,16 +213,12 @@ _canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatu
   if (len < 0) { /* Error detected */
     _canna_euc2utf(canna, canna->error, sizeof(canna->error),
 		    (unsigned char*)jrKanjiError, strlen(jrKanjiError));
-#ifdef _DEBUG_
-    FcitxLog(INFO, "    error:|%s|", canna->error);
-#endif
+    FcitxLogInfo("    error:|%s|", canna->error);
   } else {
     /* converted string */
     _canna_euc2utf(canna, canna->kakutei, sizeof(canna->kakutei), buf, len);
-#ifdef _DEBUG_
-    FcitxLog(INFO, "    kakutei:%ld:|%s|",
-	     strlen((char*)canna->kakutei), canna->kakutei);
-#endif
+    FcitxLogInfo("    kakutei:%ld:|%s|",
+		 strlen((char*)canna->kakutei), canna->kakutei);
 
     /* candidate strings */
     if (ks->length >= 0) {
@@ -227,11 +227,9 @@ _canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatu
       canna->henkan_len = _canna_strlen(ks->echoStr,ks->length);
       canna->henkan_revPos = _canna_strlen(ks->echoStr,ks->revPos);
       canna->henkan_revLen = _canna_strlen(ks->echoStr+ks->revPos,ks->revLen);
-#ifdef _DEBUG_
-      FcitxLog(INFO, "    henkan:%d:%d:%d:|%s|",
-	       canna->henkan_len, canna->henkan_revPos, canna->henkan_revLen,
-	       canna->henkan);
-#endif
+      FcitxLogInfo("    henkan:%d:%d:%d:|%s|",
+		   canna->henkan_len, canna->henkan_revPos, canna->henkan_revLen,
+		   canna->henkan);
     }
 
     /* listing infomation */
@@ -241,20 +239,16 @@ _canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatu
       canna->ichiran_len = _canna_strlen(ks->gline.line,ks->gline.length);
       canna->ichiran_revPos = _canna_strlen(ks->gline.line,ks->gline.revPos);
       canna->ichiran_revLen = _canna_strlen(ks->gline.line+ks->gline.revPos,ks->gline.revLen);
-#ifdef _DEBUG_
-      FcitxLog(INFO, "    ichiran:%d:%d:%d:|%s|",
-	       canna->ichiran_len, canna->ichiran_revPos, canna->ichiran_revLen,
-	       canna->ichiran);
-#endif
+      FcitxLogInfo("    ichiran:%d:%d:%d:|%s|",
+		   canna->ichiran_len, canna->ichiran_revPos, canna->ichiran_revLen,
+		   canna->ichiran);
     }
 
     /* conversion mode */
     if (ks->info & KanjiModeInfo) {
       _canna_euc2utf(canna, canna->mode, sizeof(canna->mode),
 		      ks->mode, strlen((char*)ks->mode));
-#ifdef _DEBUG_
-      FcitxLog(INFO, "    mode:|%s|", canna->mode);
-#endif
+      FcitxLogInfo("    mode:|%s|", canna->mode);
     }
     if (canna->mode[0] == '\0')
       strcpy((char*)canna->mode, "canna");
@@ -265,9 +259,7 @@ static boolean
 _canna_connect_server(FcitxCanna *canna)
 {
   if (!canna->initialized) {
-#ifdef _DEBUG_
-    FcitxLog(INFO, "    connect to canna server");
-#endif
+    FcitxLogInfo("    connect to canna server");
     int kugiri = 1; /* separete words */
 
     jrKanjiControl(0, KC_SETSERVERNAME, (char *)NULL);
@@ -290,9 +282,7 @@ static void
 _canna_disconnect_server(FcitxCanna *canna)
 {
   if (canna->initialized) {
-#ifdef _DEBUG_
-    FcitxLog(INFO, "    disconnect canna server");
-#endif
+    FcitxLogInfo("    disconnect canna server");
     jrKanjiControl(0, KC_FINALIZE, (char *)NULL);
     canna->initialized = false;
   }
@@ -383,13 +373,11 @@ static INPUT_RETURN_VALUE
 _canna_process_key(FcitxCanna *canna, FcitxKeySym sym, unsigned int state)
 {
     int key = _fcitxkey_to_canna(sym, state);
-#ifdef _DEBUG_
-    FcitxLog(INFO, "_canna_process_key(0x%lx,0x%lx,0x%lx) 0x%x",
-	     (unsigned long)(canna->owner),
-	     (unsigned long)sym,
-	     (unsigned long)state,
-	     key);
-#endif
+    FcitxLogInfo("_canna_process_key(0x%lx,0x%lx,0x%lx) 0x%x",
+		 (unsigned long)(canna->owner),
+		 (unsigned long)sym,
+		 (unsigned long)state,
+		 key);
 
     while (key>=0) {
 	jrKanjiStatus ks;
@@ -404,18 +392,14 @@ _canna_process_key(FcitxCanna *canna, FcitxKeySym sym, unsigned int state)
 	_canna_setup_ui_windows(canna);
         return IRV_DISPLAY_MESSAGE | IRV_DO_NOTHING;
     }
-#ifdef _DEBUG_
-    FcitxLog(INFO, "    key(0x%x) is not consumed", key);
-#endif
+    FcitxLogInfo("    key(0x%x) is not consumed", key);
     return IRV_TO_PROCESS;
 }
 
 static void
 _canna_exit()
 {
-#ifdef _DEBUG_
-    FcitxLog(INFO, "_canna_exit()");
-#endif
+    FcitxLogInfo("_canna_exit()");
     /* noop */
 }
 
@@ -465,9 +449,7 @@ static const FcitxIMIFace canna_iface = {
 void FcitxCannaResetHook(void *arg)
 {
     FcitxCanna *canna = (FcitxCanna*)arg;
-#ifdef _DEBUG_
-    FcitxLog(INFO, "FcitxCannaResetHook(0x%lx)", (unsigned long)(canna->owner));
-#endif
+    FcitxLogInfo("FcitxCannaResetHook(0x%lx)", (unsigned long)(canna->owner));
     FcitxCannaReset(arg);
 }
 
@@ -475,9 +457,7 @@ static boolean
 FcitxCannaInit(void *arg)
 {
     FcitxCanna *canna = (FcitxCanna*)arg;
-#ifdef _DEBUG_
-    FcitxLog(INFO, "FcitxCannaInit(0x%lx)", (unsigned long)(canna->owner));
-#endif
+    FcitxLogInfo("FcitxCannaInit(0x%lx)", (unsigned long)(canna->owner));
     if (!arg)
         return false;
 
@@ -489,9 +469,7 @@ FcitxCannaInit(void *arg)
     FcitxInstanceSetContext(canna->owner, CONTEXT_DISABLE_FULLWIDTH, &flag);
     FcitxInstanceSetContext(canna->owner, CONTEXT_DISABLE_AUTO_FIRST_CANDIDATE_HIGHTLIGHT, &flag);
     if (_canna_connect_server(canna)) {
-#ifdef _DEBUG_
-	FcitxLog(INFO, "    reset canna");
-#endif
+	FcitxLogInfo("    reset canna");
     }
     return canna->initialized;
 }
@@ -500,21 +478,15 @@ static INPUT_RETURN_VALUE
 FcitxCannaDoInput(void *arg, FcitxKeySym sym, unsigned int state)
 {
     FcitxCanna *canna = (FcitxCanna*)arg;
-#ifdef _DEBUG_
-    FcitxLog(INFO, "FcitxCannaDoInput(0x%lx,0x%lx,0x%lx)",
-	     (unsigned long)(canna->owner),
-	     (unsigned long)sym,
-	     (unsigned long)state);
-#endif
+    FcitxLogInfo("FcitxCannaDoInput(0x%lx,0x%lx,0x%lx)",
+		 (unsigned long)(canna->owner),
+		 (unsigned long)sym,
+		 (unsigned long)state);
     FcitxInputState* input = FcitxInstanceGetInputState(canna->owner);
     sym = FcitxInputStateGetKeySym(input);
-#ifdef _DEBUG_
-    FcitxLog(INFO, "    FcitxCannaDoInput().sym = 0x%lx;" ,(unsigned long)sym);
-#endif
+    FcitxLogInfo("    FcitxCannaDoInput().sym = 0x%lx;" ,(unsigned long)sym);
     state = FcitxInputStateGetKeyState(input);
-#ifdef _DEBUG_
-    FcitxLog(INFO, "    FcitxCannaDoInput().state = 0x%lx;" ,(unsigned long)state);
-#endif
+    FcitxLogInfo("    FcitxCannaDoInput().state = 0x%lx;" ,(unsigned long)state);
     return _canna_process_key(canna, sym, state);
 }
 
@@ -522,13 +494,9 @@ static void
 FcitxCannaReset(void *arg)
 {
     FcitxCanna *canna = (FcitxCanna*)arg;
-#ifdef _DEBUG_
-    FcitxLog(INFO, "FcitxCannaReset(0x%lx)", (unsigned long)(canna->owner));
-#endif
+    FcitxLogInfo("FcitxCannaReset(0x%lx)", (unsigned long)(canna->owner));
     if (canna->initialized) {
-#ifdef _DEBUG_
-	FcitxLog(INFO, "    reset canna state");
-#endif
+	FcitxLogInfo("    reset canna state");
 	_canna_reset_input_mode(canna);
     }
 }
@@ -536,12 +504,7 @@ FcitxCannaReset(void *arg)
 static void*
 FcitxCannaCreate(FcitxInstance *instance)
 {
-#ifdef _DEBUG_
-    FcitxLog(INFO, "FcitxCannaCreate(0x%lx)", (unsigned long)instance);
-#endif
-/*  no canna related directories under fcitx
-    bindtextdomain("fcitx-canna", LOCALEDIR);
-    bind_textdomain_codeset("fcitx-canna", "UTF-8"); */
+    FcitxLogInfo("FcitxCannaCreate(0x%lx)", (unsigned long)instance);
 
     FcitxCanna *canna = fcitx_utils_new(FcitxCanna);
     canna->owner = instance;
@@ -565,9 +528,7 @@ static void
 FcitxCannaDestroy(void *arg)
 {
     FcitxCanna *canna = (FcitxCanna*)arg;
-#ifdef _DEBUG_
-    FcitxLog(INFO, "FcitxCannaDestroy(0x%lx)", (unsigned long)(canna->owner));
-#endif
+    FcitxLogInfo("FcitxCannaDestroy(0x%lx)", (unsigned long)(canna->owner));
     _canna_disconnect_server(canna);
 
     if (canna->euc2utf)
@@ -582,8 +543,6 @@ static void
 FcitxCannaReloadConfig(void *arg)
 {
     FcitxCanna *canna = (FcitxCanna*)arg;
-#ifdef _DEBUG_
-    FcitxLog(INFO, "FcitxCannaReloadConfig(0x%lx)", (unsigned long)(canna->owner));
-#endif
+    FcitxLogInfo( "FcitxCannaReloadConfig(0x%lx)", (unsigned long)(canna->owner));
     /* noop */
 }
