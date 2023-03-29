@@ -33,13 +33,14 @@ typedef struct {
     boolean initialized;
     iconv_t euc2utf;
     unsigned char canna_buf[KEYTOSTRSIZE];
+    unsigned char last_mode[10], mode[10];
     unsigned char error[KEYTOSTRSIZE];
-    unsigned char mode[KEYTOSTRSIZE];
     unsigned char kakutei[KEYTOSTRSIZE];
     unsigned char henkan[KEYTOSTRSIZE];
     int henkan_len, henkan_revPos, henkan_revLen;
     unsigned char ichiran[KEYTOSTRSIZE];
     int ichiran_len, ichiran_revPos, ichiran_revLen;
+    boolean auxdown;
 } FcitxCanna;
 
 #endif

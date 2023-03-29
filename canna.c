@@ -112,19 +112,25 @@ _canna_strlen(unsigned char *p, int l)
 }
 
 /*
- * setup 4 ui windows and commit kakutei if it exists
+ * setup 4 ui fields and commit kakutei if it exists
  *	AuxUp: error message
  *	  or   [henkan-mode]
  *	  or   [henkan-mode] ichiran
  *
  *	ClientPreedit: henkan
  *
- * this layout provides `OnTheSpot' like appearance of kinput2,
+ * This layout provides `OnTheSpot' like appearance of kinput2,
  * but assuming "Show Preedit String in Client Window" is true
  * (it is the default).
+ *
+ * This layout does not work well with XIM,
+ * i.e. input progress is not visible.
+ * To relax this problem, AuxDown is used as follow
+ *
+ *	AuxDown: henkan        <--- display can be toggled by ESC key
  */
 static void
-_canna_setup_ui_windows(FcitxCanna *canna)
+_canna_setup_ui_fields(FcitxCanna *canna)
 {
     FcitxInputState* input = FcitxInstanceGetInputState(canna->owner);
     FcitxMessages* preedit = FcitxInputStateGetPreedit(input);
@@ -150,7 +156,6 @@ _canna_setup_ui_windows(FcitxCanna *canna)
 				  FcitxInstanceGetCurrentIC(canna->owner),
 				  (char*)canna->kakutei);
 	canna->kakutei[0] = '\0';
-	return;
     }
 
     /* henkan-mode goes to 'AuxUp' */
@@ -175,23 +180,33 @@ _canna_setup_ui_windows(FcitxCanna *canna)
 	FcitxMessagesAddMessageAtLast(auxup, MSG_OTHER, "%s", canna->ichiran);
       }
     }
-    /* henkan goes to 'ClientPreedit' */
-    if (canna->henkan_revLen) {
-      int ch;
-      char *p, *q;
-      p = fcitx_utf8_get_nth_char((char*)canna->henkan, canna->henkan_revPos);
-      q = fcitx_utf8_get_nth_char(p, canna->henkan_revLen);
-      ch = *p; *p = '\0';
-      FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", canna->henkan);
-      *p = ch;
-      ch = *q; *q = '\0';
-      FcitxMessagesAddMessageAtLast(clientpreedit, MSG_HIGHLIGHT, "%s", p);
-      *q = ch;
-      FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", q);
-      FcitxInputStateSetClientCursorPos(input, (int)(p-(char*)canna->henkan));
-    } else {
-      FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", canna->henkan);
-      FcitxInputStateSetClientCursorPos(input, strlen((char*)canna->henkan));
+    /* henkan goes to 'ClientPreedit' & 'AuxDown' */
+    if (canna->henkan[0]) {
+      if (canna->henkan_revLen) {
+	int ch;
+	char *p, *q;
+	p = fcitx_utf8_get_nth_char((char*)canna->henkan, canna->henkan_revPos);
+	q = fcitx_utf8_get_nth_char(p, canna->henkan_revLen);
+	ch = *p; *p = '\0';
+	FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", canna->henkan);
+	if (canna->auxdown)
+	  FcitxMessagesAddMessageAtLast(auxdown, MSG_OTHER, "%s", canna->henkan);
+	*p = ch;
+	ch = *q; *q = '\0';
+	FcitxMessagesAddMessageAtLast(clientpreedit, MSG_HIGHLIGHT, "%s", p);
+	if (canna->auxdown)
+	  FcitxMessagesAddMessageAtLast(auxdown, MSG_CANDIATE_CURSOR, "%s", p);
+	*q = ch;
+	FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", q);
+	if (canna->auxdown)
+	  FcitxMessagesAddMessageAtLast(auxdown, MSG_OTHER, "%s", q);
+	FcitxInputStateSetClientCursorPos(input, (int)(p-(char*)canna->henkan));
+      } else {
+	FcitxMessagesAddMessageAtLast(clientpreedit, MSG_OTHER, "%s", canna->henkan);
+	if (canna->auxdown)
+	  FcitxMessagesAddMessageAtLast(auxdown, MSG_OTHER, "%s", canna->henkan);
+	FcitxInputStateSetClientCursorPos(input, strlen((char*)canna->henkan));
+      }
     }
 }
 
@@ -217,6 +232,10 @@ _canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatu
   } else {
     /* converted string */
     _canna_euc2utf(canna, canna->kakutei, sizeof(canna->kakutei), buf, len);
+    if (len == 1 && canna->kakutei[0] < ' ') {
+	/* ignore a control character */
+	canna->kakutei[0] = '\0';
+    }
     FcitxLogInfo("    kakutei:%ld:|%s|",
 		 strlen((char*)canna->kakutei), canna->kakutei);
 
@@ -245,6 +264,7 @@ _canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatu
     }
 
     /* conversion mode */
+    strcpy((char*)canna->last_mode, (char*)canna->mode);
     if (ks->info & KanjiModeInfo) {
       _canna_euc2utf(canna, canna->mode, sizeof(canna->mode),
 		      ks->mode, strlen((char*)ks->mode));
@@ -368,6 +388,9 @@ _fcitxkey_to_canna(FcitxKeySym sym, unsigned int state)
     return -1;
 }
 
+#define IS_IDLE(x) \
+  (x->kakutei[0] == '\0' && x->henkan[0] == '\0' &&  x->ichiran[0] == '\0')
+
 /* send a key to the canna server and receive response */
 static INPUT_RETURN_VALUE
 _canna_process_key(FcitxCanna *canna, FcitxKeySym sym, unsigned int state)
@@ -382,14 +405,19 @@ _canna_process_key(FcitxCanna *canna, FcitxKeySym sym, unsigned int state)
     while (key>=0) {
 	jrKanjiStatus ks;
 	int len;
-	boolean was_idle = canna->henkan[0] == '\0';
+	boolean was_idle = IS_IDLE(canna);
 
+	if (key == 0x1b) {
+	    /* toggle displaying AuxDown */
+	    canna->auxdown = !canna->auxdown;
+	    return IRV_DISPLAY_MESSAGE | IRV_DO_NOTHING;
+	}
 	len = jrKanjiString(0, key, (char*)canna->canna_buf, KEYTOSTRSIZE, &ks);
 	_canna_storeResults(canna, canna->canna_buf, len, &ks);
-	if (was_idle && canna->henkan[0] == '\0') {
+	if (was_idle && IS_IDLE(canna) &&
+	    strcmp((char*)canna->last_mode, (char*)canna->mode) == 0)
 	    break;
-	}
-	_canna_setup_ui_windows(canna);
+	_canna_setup_ui_fields(canna);
         return IRV_DISPLAY_MESSAGE | IRV_DO_NOTHING;
     }
     FcitxLogInfo("    key(0x%x) is not consumed", key);
@@ -509,6 +537,7 @@ FcitxCannaCreate(FcitxInstance *instance)
     FcitxCanna *canna = fcitx_utils_new(FcitxCanna);
     canna->owner = instance;
     canna->initialized = false;
+    canna->auxdown = false;
     canna->euc2utf = iconv_open("UTF-8", "EUC-JP"); /* (dst, src) */
 
     (void) atexit(_canna_exit);
