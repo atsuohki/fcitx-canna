@@ -45,6 +45,7 @@ extern char *jrKanjiError;
 
 #include "canna.h"
 
+/* #define  _DEBUG_ */
 #ifdef _DEBUG_
 #define FcitxLogInfo(fmt...) FcitxLog(INFO, fmt)
 #else
@@ -216,15 +217,6 @@ _canna_setup_ui_fields(FcitxCanna *canna)
 static void
 _canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatus *ks)
 {
-  /* clear result area */
-  canna->error[0] = '\0';
-  canna->kakutei[0] = '\0';
-  canna->henkan[0] = '\0';
-  canna->henkan_len = canna->henkan_revPos = canna->henkan_revLen = 0;
-  canna->ichiran[0] = '\0';
-  canna->ichiran_len = canna->ichiran_revPos = canna->ichiran_revLen = 0;
-
-
   if (len < 0) { /* Error detected */
     _canna_euc2utf(canna, canna->error, sizeof(canna->error),
 		    (unsigned char*)jrKanjiError, strlen(jrKanjiError));
@@ -232,8 +224,9 @@ _canna_storeResults(FcitxCanna *canna, unsigned char *buf, int len, jrKanjiStatu
   } else {
     /* converted string */
     _canna_euc2utf(canna, canna->kakutei, sizeof(canna->kakutei), buf, len);
-    if (len == 1 && canna->kakutei[0] < ' ') {
-	/* ignore a control character */
+    if (strcmp((char*)canna->mode, "[ \xef\xbd\x91 ]") != 0 /* [ q ] */
+	&& len == 1 && (canna->kakutei[0] < ' ' || canna->kakutei[0] > '~')) {
+	/* ignore a control character -- DEL key while no candidate */
 	canna->kakutei[0] = '\0';
     }
     FcitxLogInfo("    kakutei:%ld:|%s|",
@@ -408,7 +401,7 @@ _canna_process_key(FcitxCanna *canna, FcitxKeySym sym, unsigned int state)
 	boolean was_idle = IS_IDLE(canna);
 
 	if (key == 0x1b) {
-	    /* toggle displaying AuxDown */
+	    /* ESC key toggles displaying AuxDown */
 	    canna->auxdown = !canna->auxdown;
 	    return IRV_DISPLAY_MESSAGE | IRV_DO_NOTHING;
 	}
@@ -523,6 +516,15 @@ FcitxCannaReset(void *arg)
 {
     FcitxCanna *canna = (FcitxCanna*)arg;
     FcitxLogInfo("FcitxCannaReset(0x%lx)", (unsigned long)(canna->owner));
+
+    /* clear result area */
+    canna->error[0] = '\0';
+    canna->kakutei[0] = '\0';
+    canna->henkan[0] = '\0';
+    canna->henkan_len = canna->henkan_revPos = canna->henkan_revLen = 0;
+    canna->ichiran[0] = '\0';
+    canna->ichiran_len = canna->ichiran_revPos = canna->ichiran_revLen = 0;
+
     if (canna->initialized) {
 	FcitxLogInfo("    reset canna state");
 	_canna_reset_input_mode(canna);
